@@ -1,0 +1,40 @@
+name: Обновить счётчик подписчиков
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: count
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Посчитать подписчиков и записать count.json
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          CHAT="@tochka_opory_9g"
+          GOAL=300
+          RESP=$(curl -s --max-time 20 "https://api.telegram.org/bot${TOKEN}/getChatMemberCount?chat_id=${CHAT}")
+          echo "$RESP" | grep -q '"ok":true' || { echo "Telegram вернул не ок: $RESP"; exit 1; }
+          N=$(echo "$RESP" | grep -oE '"result":[0-9]+' | grep -oE '[0-9]+')
+          N=$(( N > 0 ? N - 1 : 0 ))
+          printf '{"count":%s,"goal":%s,"updated":"%s"}\n' "$N" "$GOAL" "$(date -u +%FT%TZ)" > count.json
+          echo "Записано:"; cat count.json
+
+      - name: Закоммитить, если число изменилось
+        run: |
+          git config user.name  "tochka-counter"
+          git config user.email "actions@users.noreply.github.com"
+          git add count.json
+          git diff --staged --quiet || git commit -m "Счётчик: обновление"
+          git push
